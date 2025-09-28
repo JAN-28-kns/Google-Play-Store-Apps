@@ -1,0 +1,120 @@
+# Create the requested visualizations from the already loaded googleplaystore (1).csv
+# Assumes df_gp is in memory; if not, load it. Then clean needed columns and plot the 5 requested charts.
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+try:
+    df_gp
+except NameError:
+    df_gp = pd.read_csv('googleplaystore (1).csv', encoding='utf-8')
+
+# Ensure numeric fields are parsed
+
+def parse_installs(x):
+    if pd.isna(x):
+        return np.nan
+    s = str(x).replace('+','').replace(',','').strip()
+    try:
+        return int(s)
+    except Exception:
+        return np.nan
+
+
+def parse_size(x):
+    if pd.isna(x):
+        return np.nan
+    s = str(x).strip()
+    if 'Varies with device' in s:
+        return np.nan
+    if s.lower().endswith('m'):
+        try:
+            return float(s[:-1])
+        except Exception:
+            return np.nan
+    if s.lower().endswith('k'):
+        try:
+            return float(s[:-1]) / 1024.0
+        except Exception:
+            return np.nan
+    try:
+        return float(s)
+    except Exception:
+        return np.nan
+
+if 'Installs_num' not in df_gp.columns:
+    df_gp['Installs_num'] = df_gp['Installs'].apply(parse_installs)
+if 'Size_MB' not in df_gp.columns:
+    df_gp['Size_MB'] = df_gp['Size'].apply(parse_size)
+if 'Rating_num' not in df_gp.columns:
+    df_gp['Rating_num'] = pd.to_numeric(df_gp['Rating'], errors='coerce')
+
+# 1. Bar chart: total installs by category
+plt.figure(figsize=(12,6))
+installs_by_cat = df_gp.groupby('Category', dropna=True)['Installs_num'].sum().sort_values(ascending=False)
+sns.barplot(x=installs_by_cat.values, y=installs_by_cat.index, palette='viridis')
+plt.title('Total Installs by Category')
+plt.xlabel('Total Installs')
+plt.ylabel('Category')
+plt.xscale('log')
+plt.tight_layout()
+plt.show()
+
+# 2. Box plot: rating distribution by category
+plt.figure(figsize=(14,7))
+# Limit to categories with enough data to keep plot readable
+cats_keep = df_gp.groupby('Category')['Rating_num'].apply(lambda s: s.notna().sum()).sort_values(ascending=False).head(20).index
+sns.boxplot(data=df_gp[df_gp['Category'].isin(cats_keep)], x='Category', y='Rating_num')
+plt.title('App Rating Distribution by Category (Top 20 by count)')
+plt.xlabel('Category')
+plt.ylabel('Rating')
+plt.xticks(rotation=45, ha='right')
+plt.tight_layout()
+plt.show()
+
+# 3. Scatter: Size vs Installs
+plt.figure(figsize=(8,5))
+scatter_df = df_gp[['Size_MB','Installs_num']].dropna()
+# sample to avoid heavy overplotting
+if scatter_df.shape[0] > 5000:
+    scatter_df = scatter_df.sample(5000, random_state=42)
+sns.scatterplot(data=scatter_df, x='Size_MB', y='Installs_num', alpha=0.4)
+plt.yscale('log')
+plt.title('Size vs Installs')
+plt.xlabel('App Size (MB)')
+plt.ylabel('Installs (log scale)')
+plt.tight_layout()
+plt.show()
+
+# 4. Histogram: Ratings
+plt.figure(figsize=(8,5))
+sns.histplot(df_gp['Rating_num'].dropna(), bins=20, kde=False, color='slateblue')
+plt.title('Distribution of App Ratings')
+plt.xlabel('Rating')
+plt.ylabel('Count')
+plt.tight_layout()
+plt.show()
+
+# 5. Pareto chart: Top 20 apps by total installs with cumulative percentage
+top_apps = df_gp.groupby('App', dropna=True)['Installs_num'].sum().sort_values(ascending=False).head(20)
+cumperc = top_apps.cumsum() / top_apps.sum() * 100
+
+fig, ax1 = plt.subplots(figsize=(12,6))
+ax1.bar(top_apps.index, top_apps.values, color='teal')
+ax1.set_xlabel('App')
+ax1.set_ylabel('Installs')
+ax1.set_yscale('log')
+ax1.tick_params(axis='x', rotation=45, labelrotation=45)
+
+ax2 = ax1.twinx()
+ax2.plot(top_apps.index, cumperc.values, color='orange', marker='o')
+ax2.set_ylabel('Cumulative Percentage')
+ax2.set_ylim(0, 110)
+
+plt.title('Pareto Chart: Top 20 Apps by Installs')
+plt.tight_layout()
+plt.show()
+
+print('Created 5 requested charts from googleplaystore (1).csv')
